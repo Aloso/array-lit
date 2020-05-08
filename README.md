@@ -1,5 +1,8 @@
 # array-lit
 
+[Documentation](https://docs.rs/array-lit/0.1.0/array_lit/index.html) · [Crates.io](https://crates.io/crates/array-lit) · [Lib.rs](https://lib.rs/crates/array-lit)
+
+
 [Rust](https://www.rust-lang.org/) macros for array and `Vec` literals with superpowers.
 The macro for arrays is called `arr!`; the macro for `Vec`
 is called `vec!` and shadows the macro from the standard library.
