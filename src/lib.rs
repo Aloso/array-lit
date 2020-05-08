@@ -7,7 +7,7 @@
 //! They allow creating an array or `Vec` where only some elements are specified,
 //! and the rest is set to a default value:
 //!
-//! ```rust
+//! ```
 //! # use array_lit::arr;
 //! let a = arr![1, 2, 3; default: 0; 8];
 //! assert_eq!(a, [1, 2, 3, 0, 0, 0, 0, 0]);
@@ -15,7 +15,7 @@
 //!
 //! You can also specify elements at specific array indices:
 //!
-//! ```rust
+//! ```
 //! # use array_lit::arr;
 //! let a = arr![default: 1, 6: 0; 8];
 //! assert_eq!(a, [1, 1, 1, 1, 1, 1, 0, 1]);
@@ -23,7 +23,7 @@
 //!
 //! You can even specify the first _n_ elements as well as specific indices:
 //!
-//! ```rust
+//! ```
 //! # use array_lit::arr;
 //! let a = arr![1, 2; default: 3, 6: 0; 8];
 //! assert_eq!(a, [1, 2, 3, 3, 3, 3, 0, 3]);
@@ -38,12 +38,59 @@
 //! type in the array or `Vec` must implement the `Copy` trait, and the literal must
 //! specify a default value.
 //!
-//! ## Order of assignment
+//! ## How does it work?
+//!
+//! The macros generate a block that first creates a array or `Vec`, and then
+//! inserts the specified values:
+//!
+//! ```
+//! # use array_lit::arr;
+//! arr![default: 4, 0: 0, 1: 1; 5];
+//! // is expanded to
+//! {
+//!     let mut arr = [4; 5];  // in the vec! macro, std::vec! is used
+//!     arr[0] = 0;
+//!     arr[1] = 1;
+//!     arr
+//! };
+//! ```
+//!
+//! ## What about array lifetimes?
+//!
+//! In trivial cases such as `arr![3; 5]`, the `'static` lifetime is inferred for array
+//! literals. This means that they have the exact same behavior as normal array literals.
+//!
+//! In the other cases, the `'static` lifetime is not inferred. This means that the
+//! array literal is computed at runtime and doesn't have a fixed memory location.
+//! It also means that the following
+//!
+//! ```compile_fail
+//! # use array_lit::arr;
+//! fn return_temporary() -> &'static [i32; 4] {
+//!     &arr![default: 0, 0: 1; 4]
+//! }
+//! ```
+//!
+//! produces `error[E0515]: cannot return reference to temporary value`. This can be solved
+//! by assigning the literal to a `const` or `static` variable first:
+//!
+//! ```
+//! # use array_lit::arr;
+//! fn return_temporary() -> &'static [i32; 4] {
+//!     static ARR: &[i32; 4] = &arr![default: 0, 0: 1; 4];
+//!     ARR
+//! }
+//! ```
+//!
+//! Note that `const` enforces **const evaluation**, which means that the whole array is
+//! included in the application binary. This might not be desirable if the array is large.
+//!
+//! ## Order of assignments
 //!
 //! When positional elements are combined with elements at specific indices, the positional
 //! elements are assigned first, so they might be overwritten later:
 //!
-//!```rust
+//!```
 //! # use array_lit::arr;
 //! let a = arr![1, 2; default: 1, 0: 0; 4];
 //! assert_eq!(a, [0, 2, 1, 1]);
@@ -53,20 +100,20 @@
 //!
 //! If you use the 2018 edition, import the macros with
 //!
-//! ```rust,ignore
+//! ```ignore
 //! use array_lit::{arr, vec};
 //! ```
 //!
 //! If you don't want to shadow `std::vec!`, you can rename the macro:
 //!
-//! ```rust,ignore
+//! ```ignore
 //! use array_lit::{arr, vec as vector};
 //! ```
 //!
 //! If you're on the 2015 edition, or want to import the macros globally,
 //! you can add this to your crate root instead:
 //!
-//! ```rust,ignore
+//! ```ignore
 //! #[macro_use]
 //! extern crate array_lit;
 //! ```
@@ -78,8 +125,8 @@
 //!
 //! ## Minimum required Rust version
 //!
-//! This library should support fairly old compiler versions,
-//! although I haven't tested it yet.
+//! This library supports the macros in `const` and `static` contexts since
+//! Rust 1.33. Without them, Rust 1.30 is supported (but 1 doc-test fails).
 
 /// A macro for array literals with superpowers.
 ///
@@ -94,7 +141,7 @@
 /// ```
 #[macro_export]
 macro_rules! arr {
-    [default: $def:expr $(, $idx:literal : $sparse:expr )* ; $len:expr] => {
+    [default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
         {
             #[allow(unused_mut)]
             let mut arr = [$def ; $len];
@@ -102,7 +149,7 @@ macro_rules! arr {
             arr
         }
     };
-    [$( $item:expr ),* ; default: $def:expr $(, $idx:literal : $sparse:expr )* ; $len:expr] => {
+    [$( $item:expr ),* ; default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
         {
             #[allow(unused_mut, unused_assignments)]
             {
@@ -120,7 +167,10 @@ macro_rules! arr {
     [$item:expr ; $len:expr] => {
         [$item ; $len]
     };
-    [$( $item:expr ),* $(,)?] => {
+    [$( $item:expr ),*] => {
+        [ $($item),* ]
+    };
+    [$( $item:expr, )*] => {
         [ $($item),* ]
     };
 }
@@ -141,7 +191,7 @@ macro_rules! arr {
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! vec {
-    [default: $def:expr $(, $idx:literal : $sparse:expr )* ; $len:expr] => {
+    [default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
         {
             #[allow(unused_mut)]
             let mut arr = std::vec![$def ; $len];
@@ -149,25 +199,28 @@ macro_rules! vec {
             arr
         }
     };
-    [$( $item:expr ),* ; default: $def:expr $(, $idx:literal : $sparse:expr )* ; $len:expr] => {
+    [$( $item:expr ),* ; default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
         {
             #[allow(unused_mut, unused_assignments)]
             {
-                let mut arr = std::vec![$def ; $len];
+                let mut vec = std::vec![$def ; $len];
                 let mut i = 0;
                 $(
-                    arr[i] = $item;
+                    vec[i] = $item;
                     i += 1;
                 )*
-                $( arr[$idx] = $sparse; )*
-                arr
+                $( vec[$idx] = $sparse; )*
+                vec
             }
         }
     };
     [$item:expr ; $len:expr] => {
         std::vec![$item ; $len]
     };
-    [$( $item:expr ),* $(,)?] => {
+    [$( $item:expr ),*] => {
+        std::vec![ $($item),* ]
+    };
+    [$( $item:expr, )*] => {
         std::vec![ $($item),* ]
     };
 }
