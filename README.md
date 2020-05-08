@@ -115,6 +115,30 @@ you can add this to your crate root instead:
 extern crate array_lit;
 ```
 
+## Custom indices
+
+If you want to use your own `Index`/`IndexMut` implementation in these macros, you probably need an extra pair of parentheses:
+
+```rust
+#[derive(Copy, Clone)]
+struct S(bool);
+
+/// Your custom index
+struct Idx(usize);
+
+impl std::ops::Index<Idx> for Vec<S> {
+    type Output = bool;
+    // etc.
+}
+
+impl std::ops::IndexMut<Idx> for Vec<S> {
+    // etc.
+}
+
+vec![default: S(true), (Idx(16)): false; 1000];
+// parens needed ~~~~~~^~~~~~~~^
+```
+
 ## `no_std` support
 
 This library supports `no_std`, if default features are disabled.
