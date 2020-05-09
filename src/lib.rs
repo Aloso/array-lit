@@ -1,42 +1,44 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 //! Macros for array and `Vec` literals with superpowers.
-//! The macro for arrays is called `arr!`; the macro for `Vec`
-//! is called `vec!` and shadows the macro from the standard library.
+//! The macro for arrays is called `arr!`; the macro for `Vec` is called `vec!`
+//! and shadows the macro from the standard library.
 //!
-//! They allow creating an array or `Vec` where only some elements are specified,
-//! and the rest is set to a default value:
+//! They allow creating an array or `Vec` where only some elements are
+//! specified, and the rest is set to a default value.
+//!
+//! The following macro specifies three consecutive values at index 0:
 //!
 //! ```
 //! # use array_lit::arr;
-//! let a = arr![1, 2, 3; default: 0; 8];
+//! let a = arr![0; 8; { [0]: [1, 2, 3] }];
 //! assert_eq!(a, [1, 2, 3, 0, 0, 0, 0, 0]);
 //! ```
 //!
-//! You can also specify elements at specific array indices:
+//! The square brackets are only needed when specifying multiple consecutive
+//! elements:
 //!
 //! ```
 //! # use array_lit::arr;
-//! let a = arr![default: 1, 6: 0; 8];
+//! let a = arr![1; 8; { 6: 0 }];
 //! assert_eq!(a, [1, 1, 1, 1, 1, 1, 0, 1]);
 //! ```
 //!
-//! You can even specify the first _n_ elements as well as specific indices:
+//! You can specify as many single and consecutive values as you like:
 //!
 //! ```
 //! # use array_lit::arr;
-//! let a = arr![1, 2; default: 3, 6: 0; 8];
-//! assert_eq!(a, [1, 2, 3, 3, 3, 3, 0, 3]);
+//! let a = arr![0; 8; {
+//!     6: 1,            // 1 at index 6
+//!     [2]: [3, 4],     // 3 and 4 starting from index 2
+//!     7: 5,            // 5 at index 7
+//! }];
+//! assert_eq!(a, [0, 0, 3, 4, 0, 0, 1, 5]);
 //! ```
 //!
-//! They also support normal array syntax (`arr![a; N]` and `arr![a, b, c]`). This means that
-//! the `vec!` macro from this crate is a drop-in replacement for `std::vec!`.
-//!
-//! ## `Copy` bound and default values
-//!
-//! Unless the literal specifies all elements explicitly (e.g. `arr![1, 2, 3]`), the
-//! type in the array or `Vec` must implement the `Copy` trait, and the literal must
-//! specify a default value.
+//! The familiar array syntax (`arr![a; N]` and `arr![a, b, c]`) is also
+//! supported, so the `vec!` macro from this crate is a drop-in replacement for
+//! `std::vec!`.
 //!
 //! ## How does it work?
 //!
@@ -45,7 +47,7 @@
 //!
 //! ```
 //! # use array_lit::arr;
-//! arr![default: 4, 0: 0, 1: 1; 5];
+//! arr![4; 5; { 0: 0, 1: 1 }];
 //! // is expanded to
 //! {
 //!     let mut arr = [4; 5];  // in the vec! macro, std::vec! is used
@@ -55,50 +57,78 @@
 //! };
 //! ```
 //!
+//! If an array is inserted that is not of the form `[a, b, c, ..]`, a loop is
+//! used:
+//!
+//! ```rust
+//! # use array_lit::arr;
+//! arr![4; 10; { [1]: [2; 4] }];
+//! // is expanded to
+//! {
+//!     let mut arr = [4; 10];
+//!     let mut i = 1;
+//!     let end = i + 4;
+//!     while i < end {
+//!         arr[i] = 2;
+//!         i += 1;
+//!     }
+//!     arr
+//! };
+//! ```
+//!
+//! This even works for slices, arrays and `Vec`s created at runtime:
+//!
+//! ```
+//! # use array_lit::arr;
+//! let my_slice = &[1, 2, 3, 4];
+//! arr![4; 10; { [1]: my_slice }];
+//! ```
+//!
 //! ## What about array lifetimes?
 //!
-//! In trivial cases such as `arr![3; 5]`, the `'static` lifetime is inferred for array
-//! literals. This means that they have the exact same behavior as normal array literals.
+//! In trivial cases such as `arr![3; 5]`, the `'static` lifetime is inferred
+//! for array literals. This means that they have the exact same behavior as
+//! normal array literals.
 //!
-//! In the other cases, the `'static` lifetime is not inferred. This means that the
-//! array literal is computed at runtime and doesn't have a fixed memory location.
-//! It also means that the following
+//! In the other cases, the `'static` lifetime is not inferred. This means that
+//! the array literal is computed at runtime and doesn't have a fixed memory
+//! location. It also means that the following
 //!
 //! ```compile_fail
 //! # use array_lit::arr;
 //! fn return_temporary() -> &'static [i32; 4] {
-//!     &arr![default: 0, 0: 1; 4]
+//!     &arr![0; 4; { 0: 1 }]
 //! }
 //! ```
 //!
-//! produces `error[E0515]: cannot return reference to temporary value`. This can be solved
-//! by assigning the literal to a `const` or `static` variable first:
+//! produces `error[E0515]: cannot return reference to temporary value`. This
+//! can be solved by assigning the literal to a `const` or `static` variable
+//! first:
 //!
 //! ```
 //! # use array_lit::arr;
 //! fn return_temporary() -> &'static [i32; 4] {
-//!     static ARR: &[i32; 4] = &arr![default: 0, 0: 1; 4];
+//!     static ARR: &[i32; 4] = &arr![0; 4; { 0: 1 }];
 //!     ARR
 //! }
 //! ```
 //!
-//! Note that `const` enforces **const evaluation**, which means that the whole array is
-//! included in the application binary. This might not be desirable if the array is large.
+//! Values assigned to a `static` or `const` variable must be constant. Due to
+//! limitations in the compiler, macros that expand to loops aren't allowed
+//! there:
 //!
-//! ## Order of assignments
-//!
-//! When positional elements are combined with elements at specific indices, the positional
-//! elements are assigned first, so they might be overwritten later:
-//!
-//!```
-//! # use array_lit::arr;
-//! let a = arr![1, 2; default: 1, 0: 0; 4];
-//! assert_eq!(a, [0, 2, 1, 1]);
+//! ```compile_fail
+//! const ARR: [i32; 4] = arr![0; 16; { [0]: [1; 8] }];
+//! // this is expanded to a loop ~~~~~~~~~~~^^^^^^
 //! ```
+//!
+//! Note that `const` enforces **const evaluation**, which means that the whole
+//! array is included in the application binary. This might not be desirable if
+//! the array is large.
 //!
 //! ## Usage
 //!
-//! If you use the 2018 edition, import the macros with
+//! Import the macros with
 //!
 //! ```ignore
 //! use array_lit::{arr, vec};
@@ -110,12 +140,36 @@
 //! use array_lit::{arr, vec as vector};
 //! ```
 //!
-//! If you're on the 2015 edition, or want to import the macros globally,
-//! you can add this to your crate root instead:
+//! Importing the macros globally is also supported, although not recommended:
 //!
 //! ```ignore
 //! #[macro_use]
 //! extern crate array_lit;
+//! ```
+//!
+//! ## Custom indices
+//!
+//! If you want to use your own `Index`/`IndexMut` implementation in these
+//! macros, you probably need an extra pair of parentheses:
+//!
+//! ```ignore
+//! #[derive(Copy, Clone)]
+//! struct S(bool);
+//!
+//! /// Your custom index
+//! struct Idx(usize);
+//!
+//! impl std::ops::Index<Idx> for Vec<S> {
+//!     type Output = bool;
+//!     // etc.
+//! }
+//!
+//! impl std::ops::IndexMut<Idx> for Vec<S> {
+//!     // etc.
+//! }
+//!
+//! vec![S(true); 1000; { (Idx(16)): false }];
+//! // parens needed ~~~~~^~~~~~~~^
 //! ```
 //!
 //! ## `no_std` support
@@ -125,8 +179,10 @@
 //!
 //! ## Minimum required Rust version
 //!
-//! This library supports the macros in `const` and `static` contexts since
-//! Rust 1.33. Without them, Rust 1.30 is supported (but 1 doc-test fails).
+//! Requires Rust 1.33.
+
+#[cfg(test)]
+mod tests;
 
 /// A macro for array literals with superpowers.
 ///
@@ -136,42 +192,58 @@
 ///
 ///```rust
 /// # use array_lit::arr;
-/// let a = arr![1, 2; default: 1, 4: 0; 5];
+/// let a = arr![1; 5; { [0]: [1, 2], 4: 0 }];
 /// assert_eq!(a, [1, 2, 1, 1, 0]);
 /// ```
 #[macro_export]
 macro_rules! arr {
-    [default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
-        {
-            #[allow(unused_mut)]
-            let mut arr = [$def ; $len];
-            $( arr[$idx] = $sparse; )*
-            arr
-        }
-    };
-    [$( $item:expr ),* ; default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
+    [$item:expr ; $len:expr ; { $( $index:tt : $value:expr ),* $(,)? }] => {
         {
             #[allow(unused_mut, unused_assignments)]
             {
-                let mut arr = [$def ; $len];
-                let mut i = 0;
-                $(
-                    arr[i] = $item;
-                    i += 1;
-                )*
-                $( arr[$idx] = $sparse; )*
+                let mut arr = [$item ; $len];
+                $( $crate::arr!(impl arr { $index : $value }); )*
                 arr
             }
         }
     };
+
+    // same syntax as regular array literals:
     [$item:expr ; $len:expr] => {
         [$item ; $len]
     };
-    [$( $item:expr ),*] => {
+    [$( $item:expr ),* $(,)?] => {
         [ $($item),* ]
     };
-    [$( $item:expr, )*] => {
-        [ $($item),* ]
+
+    // Implementation details:
+    (impl $arr:ident { [$start:tt] : [ $value:expr ; $len:expr ] }) => {
+        let mut i = $start;
+        let end = i + $len;
+        while i < end {
+            $arr[i] = $value;
+            i += 1;
+        }
+    };
+    (impl $arr:ident { [$start:tt] : [ $($value:expr),* $(,)? ] }) => {
+        let mut i = $start;
+        $(
+            $arr[i] = $value;
+            i += 1;
+        )*
+    };
+    (impl $arr:ident { [$start:tt] : $value:expr }) => {
+        let mut i = $start;
+        let start = i;
+        let arr_inner = $value;
+        let end = i + arr_inner.len();
+        while i < end {
+            $arr[i] = arr_inner[i - start];
+            i += 1;
+        }
+    };
+    (impl $arr:ident { $key:tt : $value:expr }) => {
+        $arr[$key] = $value;
     };
 }
 
@@ -185,101 +257,28 @@ macro_rules! arr {
 ///
 ///```rust
 /// # use array_lit::vec;
-/// let a = vec![1, 2; default: 1, 4: 0; 5];
+/// let a = vec![1; 5; { [0]: [1, 2], 4: 0 }];
 /// assert_eq!(a, std::vec![1, 2, 1, 1, 0]);
 /// ```
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! vec {
-    [default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
-        {
-            #[allow(unused_mut)]
-            let mut arr = std::vec![$def ; $len];
-            $( arr[$idx] = $sparse; )*
-            arr
-        }
-    };
-    [$( $item:expr ),* ; default: $def:expr $(, $idx:tt : $sparse:expr )* ; $len:expr] => {
+    [$item:expr ; $len:expr ; { $( $index:tt : $value:expr ),* $(,)? }] => {
         {
             #[allow(unused_mut, unused_assignments)]
             {
-                let mut vec = std::vec![$def ; $len];
-                let mut i = 0;
-                $(
-                    vec[i] = $item;
-                    i += 1;
-                )*
-                $( vec[$idx] = $sparse; )*
+                let mut vec = std::vec![$item ; $len];
+                $( $crate::arr!(impl vec { $index : $value }); )*
                 vec
             }
         }
     };
+
+    // same syntax as regular array literals:
     [$item:expr ; $len:expr] => {
         std::vec![$item ; $len]
     };
-    [$( $item:expr ),*] => {
+    [$( $item:expr ),* $(,)?] => {
         std::vec![ $($item),* ]
     };
-    [$( $item:expr, )*] => {
-        std::vec![ $($item),* ]
-    };
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_simple_literals() {
-        assert_eq!(arr![3; 5], [3; 5]);
-        assert_eq!(arr![5, 4, 3, 2, 1], [5, 4, 3, 2, 1]);
-    }
-
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_simple_vec_literals() {
-        assert_eq!(vec![3; 5], std::vec![3; 5]);
-        assert_eq!(vec![5, 4, 3, 2, 1], std::vec![5, 4, 3, 2, 1]);
-    }
-
-    #[test]
-    fn test_advanced_literals() {
-        assert_eq!(arr![default: 4; 5], [4; 5]);
-        assert_eq!(arr![default: 4, 3: 3, 2: 2; 5], [4, 4, 2, 3, 4]);
-        assert_eq!(arr![1, 2; default: 3, 4: 4; 5], [1, 2, 3, 3, 4]);
-    }
-
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_advanced_vec_literals() {
-        assert_eq!(vec![default: 4; 5], std::vec![4; 5]);
-        assert_eq!(vec![default: 4, 3: 3, 2: 2; 5], std::vec![4, 4, 2, 3, 4]);
-        assert_eq!(vec![1, 2; default: 3, 4: 4; 5], std::vec![1, 2, 3, 3, 4]);
-    }
-
-    #[test]
-    fn test_assignment_order() {
-        assert_eq!(arr![1, 2, 3; default: 4, 1: 5; 5], [1, 5, 3, 4, 4]);
-    }
-
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_assignment_order_vec() {
-        assert_eq!(vec![1, 2, 3; default: 4, 1: 5; 5], std::vec![1, 5, 3, 4, 4]);
-    }
-
-    #[test]
-    fn test_non_copy_types() {
-        #[derive(PartialEq, Debug)]
-        struct X; // does NOT implement Copy
-
-        assert_eq!(arr![X, X, X], [X, X, X]);
-    }
-
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_non_copy_types_vec() {
-        #[derive(PartialEq, Debug)]
-        struct X; // does NOT implement Copy
-
-        assert_eq!(vec![X, X, X], std::vec![X, X, X]);
-    }
 }

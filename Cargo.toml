@@ -1,6 +1,6 @@
 [package]
 name = "array-lit"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Ludwig Stecher <ludwig.stecher@gmx.de>"]
 description = "Macros for array and `Vec` literals with superpowers"
 documentation = "https://github.com/Aloso/array-lit"
@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = ["macro", "literal", "array", "vec", "no_std"]
 categories = ["no-std", "rust-patterns"]
 license = "MIT OR Apache-2.0"
+edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
